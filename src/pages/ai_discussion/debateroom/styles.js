@@ -1,121 +1,112 @@
-/** @jsxImportSource @emotion/react */
 import { css } from "@emotion/react";
 
-export const inputContainer = css`
+/* 전체 화면 배경 */
+export const container = css`
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  background: linear-gradient(to bottom, #f0ece3, #d9d6cc);
+  overflow: hidden;
+`;
+
+/* 반투명 큰 로고 */
+export const logoBg = css`
+  position: absolute;
+  inset: 0;
   display: flex;
-  flex-direction: column;
-  align-items: center;
   justify-content: center;
-  height: 100vh;
-  background: linear-gradient(to bottom, #fdf8f0, #f2ece1);
-  padding: 20px;
+  align-items: center;
+  font-size: 120px;
+  font-weight: 900;
+  color: rgba(200, 200, 200, 0.18);
+  user-select: none;
+  pointer-events: none;
 `;
 
-export const title = css`
-  font-size: 2rem;
-  font-weight: bold;
-  margin-bottom: 20px;
-  text-align: center;
-  color: #5a534f;
+/* Top bar */
+export const topBar = css`
+  position: absolute;
+  top: 16px;
+  left: 16px;
 `;
 
-export const inputBox = css`
-  padding: 10px 15px;
-  font-size: 1rem;
-  border-radius: 8px;
-  border: 1px solid #c8b496;
-  width: 300px;
-  margin-bottom: 15px;
-  outline: none;
-  &:focus {
-    border-color: #bfa76f;
-    box-shadow: 0 0 5px rgba(191, 167, 111, 0.5);
-  }
-`;
-
-export const startBtn = css`
-  padding: 10px 20px;
-  font-size: 1rem;
-  background-color: #bfa76f;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  &:hover {
-    background-color: #a9905e;
-  }
-`;
-
-export const roomContainer = css`
-  display: flex;
-  flex-direction: column;
-  padding: 20px;
-  height: 100vh;
-  background-color: #fffaf0;
-`;
-
-export const roomTitle = css`
-  font-size: 1.2rem;
-  font-weight: bold;
-  margin-bottom: 15px;
-  color: #5a534f;
-`;
-
-export const chatWrapper = css`
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px;
-  background-color: #fff8ec;
-  border-radius: 10px;
-  border: 1px solid #c8b496;
-  margin-bottom: 10px;
-`;
-
-export const chatMessage = css`
+/* 뒤로 가기 버튼 */
+export const backButton = css`
   padding: 8px 12px;
-  margin-bottom: 8px;
-  border-radius: 12px;
-  background-color: #f4efe6;
-  max-width: 70%;
-  word-break: break-word;
-  color: #5a534f;
-`;
-
-export const myMessage = css`
-  background-color: #bfa76f;
-  color: #fff;
-  margin-left: auto;
-`;
-
-export const chatInputRow = css`
-  display: flex;
-  gap: 10px;
-`;
-
-export const chatInput = css`
-  flex: 1;
-  padding: 10px 15px;
-  border-radius: 8px;
-  border: 1px solid #c8b496;
-  outline: none;
-  font-size: 1rem;
-  &:focus {
-    border-color: #bfa76f;
-    box-shadow: 0 0 5px rgba(191, 167, 111, 0.5);
-  }
-`;
-
-export const sendButton = css`
-  padding: 10px 20px;
-  background-color: #bfa76f;
-  color: #fff;
-  font-size: 1rem;
-  border: none;
-  border-radius: 8px;
+  font-size: 16px;
   cursor: pointer;
-  transition: background-color 0.2s;
+  background: rgba(210, 200, 180, 0.8);
+  border-radius: 8px;
+`;
+
+/* 중앙 액션 버튼 */
+export const startButton = css`
+  position: absolute;
+  bottom: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 18px 32px;
+  font-size: 22px;
+  font-weight: bold;
+  background: rgba(191, 167, 111, 0.95);
+  color: #fff;
+  border: 2px solid #bfa76f;
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+
   &:hover {
-    background-color: #a9905e;
+    background: rgba(170, 140, 80, 1);
   }
+`;
+
+/* 오른쪽 참가자 사이드바 */
+export const sidebar = css`
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 240px;
+  height: 100%;
+  background: rgba(250, 245, 235, 0.95);
+  border-left: 2px solid #d9d6cc;
+  padding: 16px;
+  box-sizing: border-box;
+  overflow-y: auto;
+`;
+
+/* 참가자 한 줄 */
+export const participantItem = css`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 6px 8px;
+  background: rgba(215, 205, 185, 0.6);
+  border-radius: 8px;
+  transition: 0.2s;
+
+  &:hover {
+    background: rgba(215, 205, 185, 0.8);
+  }
+`;
+
+/* 아바타 원 */
+export const avatarCircle = css`
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #c4a669;
+  color: #fff;
+  font-size: 18px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border: 2px solid #bfa76f;
+`;
+
+/* 참가자 이름 */
+export const participantName = css`
+  font-size: 18px;
+  font-weight: 500;
+  color: #5a534f;
 `;

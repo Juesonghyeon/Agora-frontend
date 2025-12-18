@@ -58,8 +58,9 @@ export default function MainRouter() {
       />
 
       <Route
-        path="/AIDiscussion"
-        element={<DebateArena/>}/>
+        path="/topic/:code"
+        element={<DebateArena />}
+      />
     </Routes>
   );
 }
