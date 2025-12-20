@@ -109,6 +109,7 @@ export default function Login() {
       if (isLogin) {
         localStorage.setItem("token", res.data.token);
         localStorage.setItem("userId", res.data.userId);
+        localStorage.setItem("username", res.data.username);
 
         const card = document.querySelector("#login-card");
         card.style.transition = "all 0.5s ease";

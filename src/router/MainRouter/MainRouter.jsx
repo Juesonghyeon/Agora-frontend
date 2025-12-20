@@ -58,7 +58,7 @@ export default function MainRouter() {
       />
 
       <Route
-        path="/topic/:code"
+        path="/topic/:gameCode"
         element={<DebateArena />}
       />
     </Routes>
