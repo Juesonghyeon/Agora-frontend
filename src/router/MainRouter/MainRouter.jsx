@@ -4,7 +4,7 @@ import Main from "../../pages/main/Main.jsx";
 import Profile from "../../pages/profile/Profile.jsx";
 import Sidebar from "../../components/sidebar/Sidebar.jsx";
 import React from "react";
-import DebateArena from "../../pages/ai_discussion/debateroom/DebateArena.jsx";
+import DebateArena from "../../pages/debateroom/DebateArena.jsx";
 import Login from "../../pages/login/login.jsx";
 
 /**
@@ -61,6 +61,7 @@ export default function MainRouter() {
         path="/topic/:gameCode"
         element={<DebateArena />}
       />
+      
     </Routes>
   );
 }

@@ -1,13 +1,13 @@
 import { css } from "@emotion/react";
 
 /* ===== 기본 ===== */
-
 export const container = css`
   position: relative;
   width: 100%;
   height: 100vh;
   background: linear-gradient(to bottom, #f0ece3, #d9d6cc);
   overflow: hidden;
+  user-select: none;
 `;
 
 export const logoBg = css`
@@ -22,6 +22,7 @@ export const logoBg = css`
   pointer-events: none;
 `;
 
+/* ===== 상단 ===== */
 export const topBar = css`
   position: absolute;
   top: 48px;
@@ -34,8 +35,10 @@ export const backButton = css`
   background: rgba(210, 200, 180, 0.8);
   border-radius: 8px;
   cursor: pointer;
+  border: none;
 `;
 
+/* ===== 게임 시작 버튼 ===== */
 export const startButton = css`
   position: absolute;
   bottom: 48px;
@@ -47,32 +50,36 @@ export const startButton = css`
   background: rgba(191, 167, 111, 0.95);
   color: #fff;
   border-radius: 12px;
+  border: none;
   cursor: pointer;
+
+  &:disabled {
+    background: rgba(160, 150, 120, 0.6);
+    cursor: not-allowed;
+  }
 `;
 
 /* ===== 참가자 ===== */
-
 export const sidebar = css`
   position: absolute;
   right: 0;
-  top: 0;
+  top: 10px;
   width: 240px;
-  height: 100%;
+  height: calc(100% - 10px);
   background: rgba(250, 245, 235, 0.95);
   padding: 16px;
 
   display: flex;
-  flex-direction: column-reverse; /* ⭐ 핵심 */
+  flex-direction: column-reverse;
   gap: 14px;
 
   overflow-y: auto;
+  z-index: 1;
 `;
-
 
 export const participantItem = css`
   display: flex;
   gap: 10px;
-  margin-bottom: 14px;
   background: rgba(215, 205, 185, 0.6);
   padding: 6px 8px;
   border-radius: 8px;
@@ -83,10 +90,6 @@ export const avatarCircle = css`
   height: 40px;
   border-radius: 50%;
   background: #c4a669;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 `;
 
 export const participantName = css`
@@ -94,7 +97,6 @@ export const participantName = css`
 `;
 
 /* ===== 채팅 ===== */
-
 export const chatBox = (open) => css`
   position: absolute;
   bottom: 24px;
@@ -105,9 +107,10 @@ export const chatBox = (open) => css`
   backdrop-filter: blur(6px);
   display: flex;
   flex-direction: column;
+  z-index: 5;
+  user-select: text;
 `;
 
-/* 채팅 기록 (회색 + 스크롤 디자인) */
 export const chatMessages = (open) => css`
   height: ${open ? "200px" : "0px"};
   padding: ${open ? "12px" : "0 12px"};
@@ -116,13 +119,8 @@ export const chatMessages = (open) => css`
   font-size: 14px;
   transition: height 0.25s, padding 0.25s;
 
-  /* 스크롤바 */
   &::-webkit-scrollbar {
     width: 6px;
-  }
-  &::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.15);
-    border-radius: 4px;
   }
   &::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.35);
@@ -134,7 +132,6 @@ export const chatMessage = css`
   margin-bottom: 6px;
 `;
 
-/* 입력 영역 (황색) */
 export const chatInputWrapper = css`
   display: flex;
   background: rgba(210, 190, 140, 0.95);
@@ -148,10 +145,6 @@ export const chatInput = css`
   border: none;
   outline: none;
   color: #4a3f2a;
-
-  &::placeholder {
-    color: rgba(90, 70, 40, 0.7);
-  }
 `;
 
 export const chatSendButton = css`
@@ -160,8 +153,54 @@ export const chatSendButton = css`
   color: #fff;
   border: none;
   cursor: pointer;
+`;
 
-  &:hover {
-    background: rgba(170, 140, 80, 1);
+/* ===== 로딩 ===== */
+export const loadingContainer = css`
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+`;
+
+export const loadingSpinner = css`
+  width: 48px;
+  height: 48px;
+  border: 5px solid #ddd;
+  border-top: 5px solid #333;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
+`;
+
+export const loadingText = css`
+  margin-top: 16px;
+  font-size: 1.1rem;
+  color: #555;
+`;
+
+export const gameCode = css`
+  user-select: text;
+`
+
+/* ===== 카운트다운 오버레이 ===== */
+export const countdownOverlay = css`
+  position: fixed;   /* 🔥 핵심 */
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  font-size: 96px;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.35);
+
+  z-index: 9999;
 `;
