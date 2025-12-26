@@ -6,7 +6,7 @@ import Sidebar from "../../components/sidebar/Sidebar.jsx";
 import React from "react";
 import DebateArena from "../../pages/debateroom/DebateArena.jsx";
 import Login from "../../pages/login/login.jsx";
-import InGame from "../../pages/debateroom/ingame/InGame.jsx";
+import InGame from "../../pages/ingame/InGame.jsx";
 
 /**
  * Sidebar + 페이지를 감싸는 Wrapper 컴포넌트
