@@ -43,7 +43,39 @@ export default function InGame() {
   const isTeam1Turn = phase.key.includes("TEAM1");
   const isTeam2Turn = phase.key.includes("TEAM2");
 
-  /* ================= 주제 제출 (Mock 진행자 GPT) ================= */
+  /* ================= Gemini API 토론 주제 요청 ================= */
+  const fetchTopicFromGemini = async () => {
+    try {
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.REACT_APP_GEMINI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "gemini-1.5",
+          messages: [
+            {
+              role: "user",
+              content: "토론하기 좋은 흥미로운 주제를 추천해줘. 한 문장으로."
+            }
+          ],
+          temperature: 0.7
+        }),
+      });
+
+      const data = await response.json();
+      if (data?.output?.[0]?.content?.[0]?.text) {
+        setTopic(data.output[0].content[0].text);
+        setTopicApproved(true);
+      }
+    } catch (error) {
+      console.error("Gemini API error:", error);
+      setTopicApproved(false);
+    }
+  };
+
+  /* ================= 주제 제출 ================= */
   const submitTopic = () => {
     if (topic.length < 5) {
       setTopicApproved(false);
@@ -65,6 +97,13 @@ export default function InGame() {
 
     nextPhase();
   };
+
+  /* ================= useEffect: TOPIC_SELECT 단계에서 Gemini 호출 ================= */
+  useEffect(() => {
+    if (phase.key === "TOPIC_SELECT" && !topic) {
+      fetchTopicFromGemini();
+    }
+  }, [phase.key]);
 
   return (
     <div css={s.container}>
