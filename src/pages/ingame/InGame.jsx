@@ -16,7 +16,6 @@ export default function InGame() {
   const [currentTopic, setCurrentTopic] = useState("");
   const [loading, setLoading] = useState(false);
   
-  // 타이머 & 팀명 & 입력값
   const [timeLeft, setTimeLeft] = useState(0);
   const [team1Name, setTeam1Name] = useState("블루팀");
   const [team2Name, setTeam2Name] = useState("레드팀");
@@ -26,27 +25,22 @@ export default function InGame() {
 
   const stompClient = useRef(null);
 
-  // 1. 방 접속 및 소켓 연결
   useEffect(() => {
     if (!gameCode) return;
 
     const connectToGame = async () => {
       try {
-        // ID 조회
         const res = await axios.get(`http://localhost:8080/api/game/info/${gameCode}`);
         const numericId = res.data.id;
         setLobbyId(numericId);
 
-        // 초기 상태 로드
         const stateRes = await axios.get(`http://localhost:8080/api/game/${numericId}`);
         if (stateRes.data) {
            setPhaseString(stateRes.data.phase);
            setCurrentTopic(stateRes.data.topic);
            setTimeLeft(stateRes.data.timeLeft);
         }
-        
 
-        // 소켓 연결
         const socket = new SockJS("http://localhost:8080/ws");
         const client = new Client({
           webSocketFactory: () => socket,
@@ -55,23 +49,19 @@ export default function InGame() {
             client.subscribe(`/topic/game/${numericId}`, (message) => {
               const data = JSON.parse(message.body);
               
-              // 1. 에러/시스템 메시지 처리
               if (data.type === "ERROR") {
                 alert("🚫 " + data.message);
                 setLoading(false);
                 return;
               }
-              // 2. 판정 결과
               if (data.type === "RESULT") {
                 setJudgeResult(data.message);
-                alert(data.message); // 결과 알림
+                alert(data.message);
                 return;
               }
 
-              // 3. 게임 상태 업데이트
               if (data.phase) {
                   setPhaseString(data.phase);
-                  // 페이즈 바뀌면 로딩 해제
                   setLoading(false);
               }
               if (data.topic) setCurrentTopic(data.topic);
@@ -91,17 +81,15 @@ export default function InGame() {
     return () => stompClient.current?.deactivate();
   }, [gameCode, navigate]);
 
-  // 2. 타이머 1초씩 감소 (프론트 처리)
   useEffect(() => {
     if (timeLeft <= 0) return;
     const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
     return () => clearInterval(timer);
   }, [timeLeft]);
 
-  // 주제 제출
   const submitTopic = async () => {
     if (!topicInput.trim() || !lobbyId) return;
-    setLoading(true); // AI 검증 대기 표시
+    setLoading(true);
     try {
       await axios.post(`http://localhost:8080/api/game/${lobbyId}/topic`, {
         title: topicInput,
@@ -113,7 +101,6 @@ export default function InGame() {
     }
   };
 
-  // 발언 제출
   const submitClaim = async (team, text, setTextFunc) => {
     if (!text.trim() || !lobbyId) return;
     try {
@@ -124,25 +111,29 @@ export default function InGame() {
       setTextFunc(""); 
     } catch (e) {
       console.error(e);
+      alert("전송 오류 발생");
     }
   };
 
   if (!lobbyId) return <div css={s.container}>로딩 중...</div>;
 
+  // 🔥 현재 누구 턴인지 확인하는 헬퍼 함수
+  const isTeam1Turn = phaseString === "TEAM1_CLAIM" || phaseString === "TEAM1_REBUTTAL";
+  const isTeam2Turn = phaseString === "TEAM2_CLAIM" || phaseString === "TEAM2_REBUTTAL";
+
   return (
     <div css={s.container}>
       <div css={s.logoBg}>AGORA</div>
       
-      {/* 상단바 */}
       <div style={{display: 'flex', justifyContent: 'space-between', width: '100%', padding: '20px', position: 'relative', zIndex: 10}}>
-        <div css={s.phaseLabel}>PHASE: {phaseString}</div>
+        <div css={s.phaseLabel}>
+            PHASE: {phaseString.replace("TEAM1_", "BLUE ").replace("TEAM2_", "RED ").replace("_CLAIM", " 주장").replace("_REBUTTAL", " 반박")}
+        </div>
         <div css={s.timer}>⏳ {timeLeft}초</div>
       </div>
       
-      {/* 주제 표시 (잘 보이게 수정됨) */}
       {currentTopic && <h2 css={s.topicText}>📢 주제: {currentTopic}</h2>}
       
-      {/* 판정 결과 표시 (있을 경우) */}
       {phaseString === "JUDGEMENT" && (
           <div css={s.resultBox}>{judgeResult || "판정 중입니다..."}</div>
       )}
@@ -161,27 +152,26 @@ export default function InGame() {
           </button>
         </div>
       ) : (
-        /* 토론 화면 (양쪽 다 보임) */
         <div css={s.splitScreen}>
           {/* TEAM 1 (Blue) */}
-          <div css={s.teamSide(phaseString === "TEAM1_CLAIM")}>
+          <div css={s.teamSide(isTeam1Turn)}>
             <input 
               css={s.teamNameInput(true)} 
               value={team1Name} 
               onChange={(e) => setTeam1Name(e.target.value)} 
             />
-            {phaseString === "TEAM1_CLAIM" && <div css={s.turnBadge}>🔵 발언 차례</div>}
+            {isTeam1Turn && <div css={s.turnBadge}>🔵 {phaseString.includes("REBUTTAL") ? "반박 차례" : "발언 차례"}</div>}
             
-            <div css={s.claimCard(phaseString === "TEAM1_CLAIM")}>
+            <div css={s.claimCard(isTeam1Turn)}>
               <textarea 
                 value={textTeam1} 
                 onChange={(e) => setTextTeam1(e.target.value)} 
-                placeholder={`${team1Name} 의견을 입력하세요.`}
-                disabled={phaseString !== "TEAM1_CLAIM"}
+                placeholder={isTeam1Turn ? "내용을 입력하세요..." : "상대방 턴입니다."}
+                disabled={!isTeam1Turn}
               />
               <button 
                 onClick={() => submitClaim("team1", textTeam1, setTextTeam1)}
-                disabled={phaseString !== "TEAM1_CLAIM"}
+                disabled={!isTeam1Turn}
               >
                 제출
               </button>
@@ -189,26 +179,26 @@ export default function InGame() {
           </div>
 
           {/* TEAM 2 (Red) */}
-          <div css={s.teamSide(phaseString === "TEAM2_CLAIM")}>
+          <div css={s.teamSide(isTeam2Turn)}>
              <input 
               css={s.teamNameInput(false)} 
               value={team2Name} 
               onChange={(e) => setTeam2Name(e.target.value)} 
             />
-            {phaseString === "TEAM2_CLAIM" && <div css={s.turnBadge}>🔴 발언 차례</div>}
+            {isTeam2Turn && <div css={s.turnBadge}>🔴 {phaseString.includes("REBUTTAL") ? "반박 차례" : "발언 차례"}</div>}
 
-            <div css={s.claimCard(phaseString === "TEAM2_CLAIM")}>
+            <div css={s.claimCard(isTeam2Turn)}>
               <textarea 
                 value={textTeam2} 
                 onChange={(e) => setTextTeam2(e.target.value)}
-                placeholder={`${team2Name} 반박을 입력하세요.`}
-                disabled={phaseString !== "TEAM2_CLAIM"}
+                placeholder={isTeam2Turn ? "내용을 입력하세요..." : "상대방 턴입니다."}
+                disabled={!isTeam2Turn}
               />
               <button 
                 onClick={() => submitClaim("team2", textTeam2, setTextTeam2)}
-                disabled={phaseString !== "TEAM2_CLAIM"}
+                disabled={!isTeam2Turn}
               >
-                제출 (판정 시작)
+                {phaseString === "TEAM2_REBUTTAL" ? "제출 (판정 시작)" : "제출"}
               </button>
             </div>
           </div>

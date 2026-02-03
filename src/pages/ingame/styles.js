@@ -178,3 +178,4 @@ export const resultBox = css`
   text-align: center;
   border: 4px solid #6a5c3a;
 `;
+
