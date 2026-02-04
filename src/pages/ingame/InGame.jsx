@@ -10,20 +10,31 @@ export default function InGame() {
   const { gameCode } = useParams();
   const navigate = useNavigate();
   
+  // 게임 상태 관리
   const [lobbyId, setLobbyId] = useState(null);
-  const [phaseString, setPhaseString] = useState("TOPIC_SELECT");
-  const [topicInput, setTopicInput] = useState("");
-  const [currentTopic, setCurrentTopic] = useState("");
-  const [loading, setLoading] = useState(false);
-  
+  const [phase, setPhase] = useState("TOPIC_SELECT");
   const [timeLeft, setTimeLeft] = useState(0);
-  const [team1Name, setTeam1Name] = useState("블루팀");
-  const [team2Name, setTeam2Name] = useState("레드팀");
-  const [textTeam1, setTextTeam1] = useState("");
-  const [textTeam2, setTextTeam2] = useState("");
+  const [topic, setTopic] = useState("");
+  
+  // 플레이어 및 팀 정보
+  const [players, setPlayers] = useState({});
+  const [myId, setMyId] = useState(""); // 내 소켓 ID
+  const [team1Leader, setTeam1Leader] = useState("");
+  const [team2Leader, setTeam2Leader] = useState("");
+  const [team1Claims, setTeam1Claims] = useState([]);
+  const [team2Claims, setTeam2Claims] = useState([]);
+
+  // 입력값들
+  const [topicInput, setTopicInput] = useState("");
+  const [opinionInput, setOpinionInput] = useState("");
+  const [actionInput, setActionInput] = useState("");
+  const [loading, setLoading] = useState(false);
   const [judgeResult, setJudgeResult] = useState("");
 
   const stompClient = useRef(null);
+
+  // 내 정보 찾기용 헬퍼
+  const myInfo = players[myId] || {};
 
   useEffect(() => {
     if (!gameCode) return;
@@ -34,52 +45,49 @@ export default function InGame() {
         const numericId = res.data.id;
         setLobbyId(numericId);
 
-        const stateRes = await axios.get(`http://localhost:8080/api/game/${numericId}`);
-        if (stateRes.data) {
-           setPhaseString(stateRes.data.phase);
-           setCurrentTopic(stateRes.data.topic);
-           setTimeLeft(stateRes.data.timeLeft);
-        }
-
         const socket = new SockJS("http://localhost:8080/ws");
         const client = new Client({
           webSocketFactory: () => socket,
-          onConnect: () => {
-            console.log("✅ STOMP 연결됨");
+          onConnect: (frame) => {
+            // 소켓 연결 시 생성된 고유 ID 저장 (내 식별자)
+            const sessionId = socket._transport.url.split("/").reverse()[1];
+            setMyId(sessionId);
+
+            // 입장 알림 (닉네임은 임시로 '익명+ID' 처리, 실제론 이전 페이지에서 받아와야 함)
+            axios.post(`http://localhost:8080/api/game/${numericId}/join`, {
+              nickname: `플레이어_${sessionId.substring(0, 4)}`,
+              socketId: sessionId
+            });
+
             client.subscribe(`/topic/game/${numericId}`, (message) => {
               const data = JSON.parse(message.body);
               
-              if (data.type === "ERROR") {
-                alert("🚫 " + data.message);
-                setLoading(false);
-                return;
-              }
-              if (data.type === "RESULT") {
-                setJudgeResult(data.message);
-                alert(data.message);
-                return;
-              }
+              if (data.type === "ERROR") return alert(data.message);
+              if (data.type === "RESULT") return setJudgeResult(data.message);
 
-              if (data.phase) {
-                  setPhaseString(data.phase);
-                  setLoading(false);
-              }
-              if (data.topic) setCurrentTopic(data.topic);
+              // 전체 상태 업데이트
+              if (data.phase) setPhase(data.phase);
+              if (data.topic) setTopic(data.topic);
               if (data.timeLeft !== undefined) setTimeLeft(data.timeLeft);
+              if (data.players) setPlayers(data.players);
+              if (data.team1Leader) setTeam1Leader(data.team1Leader);
+              if (data.team2Leader) setTeam2Leader(data.team2Leader);
+              if (data.team1Claims) setTeam1Claims(data.team1Claims);
+              if (data.team2Claims) setTeam2Claims(data.team2Claims);
+              
+              setLoading(false);
             });
           },
         });
         client.activate();
         stompClient.current = client;
-
       } catch (err) {
-        console.error("접속 실패:", err);
         navigate("/main");
       }
     };
     connectToGame();
     return () => stompClient.current?.deactivate();
-  }, [gameCode, navigate]);
+  }, [gameCode]);
 
   useEffect(() => {
     if (timeLeft <= 0) return;
@@ -87,121 +95,145 @@ export default function InGame() {
     return () => clearInterval(timer);
   }, [timeLeft]);
 
+  // --- API 호출 함수들 ---
+
   const submitTopic = async () => {
-    if (!topicInput.trim() || !lobbyId) return;
+    if (!topicInput.trim()) return;
     setLoading(true);
-    try {
-      await axios.post(`http://localhost:8080/api/game/${lobbyId}/topic`, {
-        title: topicInput,
-        type: "AI", scale: "MEDIUM", difficulty: "NORMAL", participationCode: gameCode
-      });
-    } catch (e) {
-      alert("전송 실패");
-      setLoading(false);
-    }
+    await axios.post(`http://localhost:8080/api/game/${lobbyId}/topic`, { title: topicInput });
   };
 
-  const submitClaim = async (team, text, setTextFunc) => {
-    if (!text.trim() || !lobbyId) return;
-    try {
-      await axios.post(`http://localhost:8080/api/game/${lobbyId}/claim`, {
-        team: team, 
-        text: text
-      });
-      setTextFunc(""); 
-    } catch (e) {
-      console.error(e);
-      alert("전송 오류 발생");
-    }
+  const submitOpinion = async () => {
+    if (!opinionInput.trim()) return;
+    await axios.post(`http://localhost:8080/api/game/${lobbyId}/opinion`, {
+      socketId: myId,
+      opinion: opinionInput
+    });
+    setOpinionInput("");
+    setLoading(true); // 팀 배정 대기
   };
 
-  if (!lobbyId) return <div css={s.container}>로딩 중...</div>;
+  const handleVote = async (candidateId) => {
+    await axios.post(`http://localhost:8080/api/game/${lobbyId}/vote`, {
+      voterId: myId,
+      candidateId: candidateId
+    });
+  };
 
-  // 🔥 현재 누구 턴인지 확인하는 헬퍼 함수
-  const isTeam1Turn = phaseString === "TEAM1_CLAIM" || phaseString === "TEAM1_REBUTTAL";
-  const isTeam2Turn = phaseString === "TEAM2_CLAIM" || phaseString === "TEAM2_REBUTTAL";
+  const submitAction = async () => {
+    if (!actionInput.trim()) return;
+    await axios.post(`http://localhost:8080/api/game/${lobbyId}/action`, {
+      leaderId: myId,
+      content: actionInput
+    });
+    setActionInput("");
+  };
+
+  // --- 렌더링 헬퍼 ---
+  const isLeader = myId === team1Leader || myId === team2Leader;
+  const myTeam = myInfo.team; // "team1" or "team2"
+  
+  // 단계 한글화
+  const getPhaseName = () => {
+    switch(phase) {
+      case "GATHER_OPINIONS": return "의견 수렴 중";
+      case "VOTE_LEADER": return "팀장 투표";
+      case "ARGUMENT": return "1단계: 입론(주장)";
+      case "EVIDENCE": return "2단계: 근거 제시";
+      case "REBUTTAL": return "3단계: 반론";
+      case "CLOSING": return "4단계: 최종 변론";
+      case "JUDGEMENT": return "AI 판정 중";
+      default: return "대기 중";
+    }
+  };
 
   return (
     <div css={s.container}>
       <div css={s.logoBg}>AGORA</div>
       
-      <div style={{display: 'flex', justifyContent: 'space-between', width: '100%', padding: '20px', position: 'relative', zIndex: 10}}>
-        <div css={s.phaseLabel}>
-            PHASE: {phaseString.replace("TEAM1_", "BLUE ").replace("TEAM2_", "RED ").replace("_CLAIM", " 주장").replace("_REBUTTAL", " 반박")}
-        </div>
+      <div style={{display: 'flex', justifyContent: 'space-between', width: '100%', padding: '20px', zIndex: 10}}>
+        <div css={s.phaseLabel}>PHASE: {getPhaseName()}</div>
         <div css={s.timer}>⏳ {timeLeft}초</div>
       </div>
-      
-      {currentTopic && <h2 css={s.topicText}>📢 주제: {currentTopic}</h2>}
-      
-      {phaseString === "JUDGEMENT" && (
-          <div css={s.resultBox}>{judgeResult || "판정 중입니다..."}</div>
-      )}
 
-      {phaseString === "TOPIC_SELECT" ? (
+      {topic && <h2 css={s.topicText}>📢 {topic}</h2>}
+
+      {/* 1. 주제 선정 단계 */}
+      {phase === "TOPIC_SELECT" && (
         <div css={s.centerBox}>
           <h2>토론 주제를 정해주세요</h2>
-          <input
-            css={s.modalInput}
-            value={topicInput}
-            onChange={(e) => setTopicInput(e.target.value)}
-            placeholder="예: 민초 vs 반민초"
-          />
-          <button css={s.modalSendBtn} onClick={submitTopic} disabled={loading}>
-            {loading ? "AI가 주제를 심사 중입니다..." : "주제 제안하기"}
+          <input css={s.modalInput} value={topicInput} onChange={e => setTopicInput(e.target.value)} placeholder="예: AI가 예술을 대체할 수 있는가?" />
+          <button css={s.modalSendBtn} onClick={submitTopic} disabled={loading}>주제 확정</button>
+        </div>
+      )}
+
+      {/* 2. 의견 제출 단계 (팀 빌딩) */}
+      {phase === "GATHER_OPINIONS" && (
+        <div css={s.centerBox}>
+          <h2>당신의 짧은 견해를 적어주세요</h2>
+          <p>AI가 이 의견을 바탕으로 팀을 나눕니다.</p>
+          <textarea css={s.opinionArea} value={opinionInput} onChange={e => setOpinionInput(e.target.value)} placeholder="나는 ~라고 생각한다. 왜냐하면..." />
+          <button css={s.modalSendBtn} onClick={submitOpinion} disabled={loading}>
+            {loading ? "다른 유저 기다리는 중..." : "의견 제출"}
           </button>
         </div>
-      ) : (
+      )}
+
+      {/* 3. 팀장 투표 단계 */}
+      {phase === "VOTE_LEADER" && (
+        <div css={s.centerBox}>
+          <h2>우리 팀({myTeam === 'team1' ? '블루' : '레드'})의 팀장을 뽑아주세요</h2>
+          <div css={s.voteGrid}>
+            {Object.entries(players)
+              .filter(([id, info]) => info.team === myTeam)
+              .map(([id, info]) => (
+                <button key={id} css={s.voteBtn} onClick={() => handleVote(id)}>
+                  {info.nickname} (현재 {info.voteCount}표)
+                </button>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* 4. 토론 진행 단계 */}
+      {["ARGUMENT", "EVIDENCE", "REBUTTAL", "CLOSING"].includes(phase) && (
         <div css={s.splitScreen}>
-          {/* TEAM 1 (Blue) */}
-          <div css={s.teamSide(isTeam1Turn)}>
-            <input 
-              css={s.teamNameInput(true)} 
-              value={team1Name} 
-              onChange={(e) => setTeam1Name(e.target.value)} 
-            />
-            {isTeam1Turn && <div css={s.turnBadge}>🔵 {phaseString.includes("REBUTTAL") ? "반박 차례" : "발언 차례"}</div>}
-            
-            <div css={s.claimCard(isTeam1Turn)}>
-              <textarea 
-                value={textTeam1} 
-                onChange={(e) => setTextTeam1(e.target.value)} 
-                placeholder={isTeam1Turn ? "내용을 입력하세요..." : "상대방 턴입니다."}
-                disabled={!isTeam1Turn}
-              />
-              <button 
-                onClick={() => submitClaim("team1", textTeam1, setTextTeam1)}
-                disabled={!isTeam1Turn}
-              >
-                제출
-              </button>
+          {/* 팀 1 (좌) */}
+          <div css={s.teamSide(myTeam === 'team1')}>
+            <h3 css={s.teamTitle(true)}>BLUE TEAM {team1Leader === myId && "(나)"}</h3>
+            <div css={s.historyBox}>
+              {team1Claims.map((c, i) => <div key={i} css={s.bubble}>{c}</div>)}
             </div>
+            {myTeam === 'team1' && isLeader && (
+              <div css={s.actionArea}>
+                <textarea value={actionInput} onChange={e => setActionInput(e.target.value)} placeholder="팀의 의견을 정리해서 입력하세요..." />
+                <button onClick={submitAction}>발언 제출</button>
+              </div>
+            )}
           </div>
 
-          {/* TEAM 2 (Red) */}
-          <div css={s.teamSide(isTeam2Turn)}>
-             <input 
-              css={s.teamNameInput(false)} 
-              value={team2Name} 
-              onChange={(e) => setTeam2Name(e.target.value)} 
-            />
-            {isTeam2Turn && <div css={s.turnBadge}>🔴 {phaseString.includes("REBUTTAL") ? "반박 차례" : "발언 차례"}</div>}
-
-            <div css={s.claimCard(isTeam2Turn)}>
-              <textarea 
-                value={textTeam2} 
-                onChange={(e) => setTextTeam2(e.target.value)}
-                placeholder={isTeam2Turn ? "내용을 입력하세요..." : "상대방 턴입니다."}
-                disabled={!isTeam2Turn}
-              />
-              <button 
-                onClick={() => submitClaim("team2", textTeam2, setTextTeam2)}
-                disabled={!isTeam2Turn}
-              >
-                {phaseString === "TEAM2_REBUTTAL" ? "제출 (판정 시작)" : "제출"}
-              </button>
+          {/* 팀 2 (우) */}
+          <div css={s.teamSide(myTeam === 'team2')}>
+            <h3 css={s.teamTitle(false)}>RED TEAM {team2Leader === myId && "(나)"}</h3>
+            <div css={s.historyBox}>
+              {team2Claims.map((c, i) => <div key={i} css={s.bubble}>{c}</div>)}
             </div>
+            {myTeam === 'team2' && isLeader && (
+              <div css={s.actionArea}>
+                <textarea value={actionInput} onChange={e => setActionInput(e.target.value)} placeholder="팀의 의견을 정리해서 입력하세요..." />
+                <button onClick={submitAction}>발언 제출</button>
+              </div>
+            )}
           </div>
+        </div>
+      )}
+
+      {/* 5. 결과 창 */}
+      {phase === "JUDGEMENT" && (
+        <div css={s.resultBox}>
+          <h2>최종 판정</h2>
+          <p>{judgeResult || "AI가 토론 내용을 분석하고 있습니다..."}</p>
+          {judgeResult && <button onClick={() => navigate("/main")}>로비로 이동</button>}
         </div>
       )}
     </div>
