@@ -18,7 +18,7 @@ export default function InGame() {
   
   // 플레이어 및 팀 정보
   const [players, setPlayers] = useState({});
-  const [myId, setMyId] = useState(""); // 내 소켓 ID
+  const [myId, setMyId] = useState(""); 
   const [team1Leader, setTeam1Leader] = useState("");
   const [team2Leader, setTeam2Leader] = useState("");
   const [team1Claims, setTeam1Claims] = useState([]);
@@ -27,13 +27,16 @@ export default function InGame() {
   // 입력값들
   const [topicInput, setTopicInput] = useState("");
   const [opinionInput, setOpinionInput] = useState("");
-  const [actionInput, setActionInput] = useState("");
+  
+  // [수정] 양쪽 팀 입력창 분리 (슈퍼 유저 편의성)
+  const [actionInput1, setActionInput1] = useState(""); // 블루팀용
+  const [actionInput2, setActionInput2] = useState(""); // 레드팀용
+
   const [loading, setLoading] = useState(false);
   const [judgeResult, setJudgeResult] = useState("");
 
   const stompClient = useRef(null);
 
-  // 내 정보 찾기용 헬퍼
   const myInfo = players[myId] || {};
 
   useEffect(() => {
@@ -49,14 +52,30 @@ export default function InGame() {
         const client = new Client({
           webSocketFactory: () => socket,
           onConnect: (frame) => {
-            // 소켓 연결 시 생성된 고유 ID 저장 (내 식별자)
             const sessionId = socket._transport.url.split("/").reverse()[1];
             setMyId(sessionId);
 
-            // 입장 알림 (닉네임은 임시로 '익명+ID' 처리, 실제론 이전 페이지에서 받아와야 함)
+            // [중요] 슈퍼 유저 테스트를 위해 닉네임 하드코딩 가능, 혹은 입력받기
+            // 여기서는 기존 로직 유지하되, 만약 특정 조건이면 서버에서 juice080321로 인식하도록 해야 함.
+            // *주의*: 서버는 sessionId를 키로 씁니다. juice080321로 테스트하려면 
+            // 1. 소켓 연결 시 헤더를 조작하거나 
+            // 2. 이 join API에서 닉네임만 보내는 게 아니라 socketId를 속일 수 없으니
+            // ==> *서버 코드를 보면 sessionId를 키로 씁니다.* // ==> 로컬 테스트 시 sessionId가 매번 변하므로, 
+            // ==> **GameService의 joinPlayer에서 nickname이 "juice080321"이면 players 맵의 키를 "juice080321"로 강제 저장하도록 수정하거나**,
+            // ==> **가장 쉬운 방법**: 아래 axios.post join에서 socketId를 보내는데, 
+            // ==> 서버 GameService.joinPlayer가 req.getSocketId()를 키로 씁니다.
+            // ==> 따라서 클라이언트에서 socketId를 "juice080321"로 보내버리면 됩니다.
+            
+            // 슈퍼 유저 테스트용 ID 스위칭 (실제로는 로그인 정보 등 사용)
+            const isSuperUser = true; // 테스트 할 때 true로 변경하세요!
+            const realSocketId = isSuperUser ? "juice080321" : sessionId;
+            
+            // 내 ID 상태 업데이트 (그래야 화면이 정상 작동)
+            setMyId(realSocketId); 
+
             axios.post(`http://localhost:8080/api/game/${numericId}/join`, {
-              nickname: `플레이어_${sessionId.substring(0, 4)}`,
-              socketId: sessionId
+              nickname: isSuperUser ? "Admin_Juice" : `플레이어_${sessionId.substring(0, 4)}`,
+              socketId: realSocketId 
             });
 
             client.subscribe(`/topic/game/${numericId}`, (message) => {
@@ -65,7 +84,6 @@ export default function InGame() {
               if (data.type === "ERROR") return alert(data.message);
               if (data.type === "RESULT") return setJudgeResult(data.message);
 
-              // 전체 상태 업데이트
               if (data.phase) setPhase(data.phase);
               if (data.topic) setTopic(data.topic);
               if (data.timeLeft !== undefined) setTimeLeft(data.timeLeft);
@@ -101,6 +119,7 @@ export default function InGame() {
     if (!topicInput.trim()) return;
     setLoading(true);
     await axios.post(`http://localhost:8080/api/game/${lobbyId}/topic`, { title: topicInput });
+    // 성공 여부는 소켓으로 오므로 loading 해제는 소켓 수신부에서
   };
 
   const submitOpinion = async () => {
@@ -110,7 +129,7 @@ export default function InGame() {
       opinion: opinionInput
     });
     setOpinionInput("");
-    setLoading(true); // 팀 배정 대기
+    setLoading(true);
   };
 
   const handleVote = async (candidateId) => {
@@ -120,20 +139,26 @@ export default function InGame() {
     });
   };
 
-  const submitAction = async () => {
-    if (!actionInput.trim()) return;
+  // [수정] 팀을 지정해서 발언 제출
+  const submitAction = async (content, teamName) => {
+    if (!content.trim()) return;
     await axios.post(`http://localhost:8080/api/game/${lobbyId}/action`, {
       leaderId: myId,
-      content: actionInput
+      content: content,
+      team: teamName // "team1" or "team2"
     });
-    setActionInput("");
+    // 입력창 초기화
+    if (teamName === "team1") setActionInput1("");
+    if (teamName === "team2") setActionInput2("");
   };
 
   // --- 렌더링 헬퍼 ---
-  const isLeader = myId === team1Leader || myId === team2Leader;
-  const myTeam = myInfo.team; // "team1" or "team2"
+  const myTeam = myInfo.team; // "team1", "team2", "BOTH"
   
-  // 단계 한글화
+  // 내가 해당 팀을 컨트롤 할 수 있는가?
+  const canControlTeam1 = (myTeam === 'team1' || myTeam === 'BOTH') && (team1Leader === myId);
+  const canControlTeam2 = (myTeam === 'team2' || myTeam === 'BOTH') && (team2Leader === myId);
+  
   const getPhaseName = () => {
     switch(phase) {
       case "GATHER_OPINIONS": return "의견 수렴 중";
@@ -167,7 +192,7 @@ export default function InGame() {
         </div>
       )}
 
-      {/* 2. 의견 제출 단계 (팀 빌딩) */}
+      {/* 2. 의견 제출 단계 */}
       {phase === "GATHER_OPINIONS" && (
         <div css={s.centerBox}>
           <h2>당신의 짧은 견해를 적어주세요</h2>
@@ -199,29 +224,37 @@ export default function InGame() {
       {["ARGUMENT", "EVIDENCE", "REBUTTAL", "CLOSING"].includes(phase) && (
         <div css={s.splitScreen}>
           {/* 팀 1 (좌) */}
-          <div css={s.teamSide(myTeam === 'team1')}>
+          <div css={s.teamSide(true)}>
             <h3 css={s.teamTitle(true)}>BLUE TEAM {team1Leader === myId && "(나)"}</h3>
             <div css={s.historyBox}>
               {team1Claims.map((c, i) => <div key={i} css={s.bubble}>{c}</div>)}
             </div>
-            {myTeam === 'team1' && isLeader && (
+            {canControlTeam1 && (
               <div css={s.actionArea}>
-                <textarea value={actionInput} onChange={e => setActionInput(e.target.value)} placeholder="팀의 의견을 정리해서 입력하세요..." />
-                <button onClick={submitAction}>발언 제출</button>
+                <textarea 
+                  value={actionInput1} 
+                  onChange={e => setActionInput1(e.target.value)} 
+                  placeholder="[블루팀] 의견을 입력하세요..." 
+                />
+                <button onClick={() => submitAction(actionInput1, "team1")}>발언 제출</button>
               </div>
             )}
           </div>
 
           {/* 팀 2 (우) */}
-          <div css={s.teamSide(myTeam === 'team2')}>
+          <div css={s.teamSide(false)}>
             <h3 css={s.teamTitle(false)}>RED TEAM {team2Leader === myId && "(나)"}</h3>
             <div css={s.historyBox}>
               {team2Claims.map((c, i) => <div key={i} css={s.bubble}>{c}</div>)}
             </div>
-            {myTeam === 'team2' && isLeader && (
+            {canControlTeam2 && (
               <div css={s.actionArea}>
-                <textarea value={actionInput} onChange={e => setActionInput(e.target.value)} placeholder="팀의 의견을 정리해서 입력하세요..." />
-                <button onClick={submitAction}>발언 제출</button>
+                <textarea 
+                  value={actionInput2} 
+                  onChange={e => setActionInput2(e.target.value)} 
+                  placeholder="[레드팀] 의견을 입력하세요..." 
+                />
+                <button onClick={() => submitAction(actionInput2, "team2")}>발언 제출</button>
               </div>
             )}
           </div>
