@@ -7,6 +7,7 @@ import React from "react";
 import DebateArena from "../../pages/debateroom/DebateArena.jsx";
 import Login from "../../pages/login/login.jsx";
 import InGame from "../../pages/ingame/InGame.jsx";
+import AIDiscussion from "../../pages/aIdiscussion/AIDiscussion.jsx";
 
 /**
  * Sidebar + 페이지를 감싸는 Wrapper 컴포넌트
@@ -67,6 +68,8 @@ export default function MainRouter() {
         path="/game/:gameCode"
         element={<InGame/>}
       />
+      <Route path="/aidiscussion" element={<AIDiscussion />} />
     </Routes>
+    
   );
 }

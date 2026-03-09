@@ -127,22 +127,22 @@ export default function Main() {
     }
   };
 
-  // 🔥 수정된 참여 핸들러
+  // 🔥 수정된 참여 핸들러: /aidiscussion 경로로 이동
   const handleParticipation = (topic) => {
     if (!topic) {
       alert("토론 정보를 불러올 수 없습니다.");
       return;
     }
 
-    const type = String(topic.type).toUpperCase(); // 대문자로 강제 통일
+    const type = String(topic.type).toUpperCase(); 
 
-    // 🔥 AI 모드 이동
+    // AI 모드 이동 (쿼리 스트링으로 id 전달)
     if (type === "AI") {
-      navigate(`/AIDiscussion?id=${topic.id}`);
+      navigate(`/aidiscussion?id=${topic.id}`);
       return;
     }
 
-    // 🔥 멀티 모드 이동
+    // 멀티 모드 이동
     if (topic.participationCode) {
       navigate(`/topic/${topic.participationCode}`);
     } else {
@@ -170,7 +170,8 @@ export default function Main() {
                   참여하기
                 </button>
 
-                {topic.type !== "AI" && topic.participationCode && (
+                {/* AI 타입이 아닐 때만 참여코드 표시 */}
+                {String(topic.type).toUpperCase() !== "AI" && topic.participationCode && (
                   <div css={{ display: "flex", gap: "8px", alignItems: "center" }}>
                     <input
                       type="text"
@@ -308,7 +309,7 @@ export default function Main() {
               </>
             )}
 
-            {newTopic.type === "AI" && (
+            {(newTopic.type === "AI" || newTopic.type === "ai") && (
               <select
                 css={s.modalInput}
                 value={newTopic.difficulty}

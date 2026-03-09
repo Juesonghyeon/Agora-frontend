@@ -28,8 +28,7 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }) {
       <ul css={s.menuList}>
         {sidebarOpen && (
           <>
-            <li onClick={() => navigate("/main")}>참여한 토론 보기</li>
-            <li onClick={() => navigate("/main")}>생성한 토론 목록</li>
+            <li onClick={() => navigate("/main")}>토론 목록</li>
             <li onClick={() => navigate("/profile")}>프로필</li>
             <li onClick={handleLogout}>로그아웃</li>
             <li>회원탈퇴</li>
