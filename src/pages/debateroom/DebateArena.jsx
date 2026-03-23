@@ -1,11 +1,18 @@
 /** @jsxImportSource @emotion/react */
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import * as s from "./styles";
 import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import { io } from "socket.io-client";
+import { keyframes } from "@emotion/react";
 
 const API_BASE = "http://localhost:8080";
+const SOCKET_SERVER = "http://localhost:8081";
+
+const slideOut = keyframes`
+  0% { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(50px); }
+`;
 
 const LobbyLoading = () => (
   <div css={s.loadingContainer}>
@@ -22,95 +29,150 @@ export default function DebateLobby() {
   const username = localStorage.getItem("username");
 
   const [participants, setParticipants] = useState([]);
-  const [messages, setMessages] = useState(["시스템: 토론을 시작하세요."]);
+  const [messages, setMessages] = useState(["시스템: 로비에 입장했습니다."]);
   const [chatInput, setChatInput] = useState("");
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isJoining, setIsJoining] = useState(true);
   const [countdown, setCountdown] = useState(null);
   
-  // 프로필 모달 대상 유저 상태
   const [selectedUser, setSelectedUser] = useState(null);
-  // 프로필 데이터 로딩 상태
   const [isProfileLoading, setIsProfileLoading] = useState(false);
+  const [leavingPlayers, setLeavingPlayers] = useState([]);
+
+  const [friends, setFriends] = useState([]);
+  const [openChats, setOpenChats] = useState([]); 
+  const [chatMessages, setChatMessages] = useState({}); 
+  const [chatInputs, setChatInputs] = useState({});
 
   const chatRef = useRef(null);
   const messagesEndRef = useRef(null);
   const socketRef = useRef(null);
 
+  const getAuthHeaders = useCallback(() => {
+    const token = localStorage.getItem("token");
+    return { headers: { Authorization: token ? `Bearer ${token}` : "" } };
+  }, []);
+
   const isHost = participants.some(
     (p) => p.userId === userId && p.role === "HOST"
   );
 
+  const getFullImageUrl = (url) => {
+    if (!url || url === "" || url === "null" || url === "undefined") {
+      return "/default_profile.png";
+    }
+    return url.startsWith('http') ? url : `${API_BASE}${url}`;
+  };
+
+  // 친구 데이터 로드
+  const loadFriendsData = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/api/profile/friends/all?userId=${userId}`, getAuthHeaders());
+      setFriends(res.data.friends || []);
+    } catch (err) { console.error("친구 로드 실패", err); }
+  }, [userId, getAuthHeaders]);
+
+  // --- [핵심 수정] 방 참가 및 소켓 연결 통합 로직 ---
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (chatRef.current && !chatRef.current.contains(event.target)) {
-        setIsChatOpen(false);
+    if (!gameCode || !userId || !username) return;
+
+    const initLobby = async () => {
+      try {
+        setIsJoining(true);
+
+        // 1. 서버 DB에 입장 기록
+        await axios.post(`${API_BASE}/api/game/join-room-action`, { gameCode, userId }, getAuthHeaders());
+        await loadFriendsData();
+
+        // 2. 최신 참가자 명단(DB) 가져오기 -> 여기서 내 정확한 프로필 URL 확인 가능
+        const res = await axios.get(`${API_BASE}/api/game/api/game/join-room-players`, {
+          params: { gameCode },
+          ...getAuthHeaders()
+        });
+        const dbPlayers = Array.isArray(res.data) ? res.data : [];
+        setParticipants(dbPlayers);
+
+        // 3. 내 진짜 프로필 이미지 찾기
+        const myInfo = dbPlayers.find(p => p.userId === userId);
+        const myRealProfileImg = myInfo ? myInfo.profileImageUrl : "";
+
+        // 4. 소켓 연결 시작
+        socketRef.current = io(SOCKET_SERVER);
+
+        socketRef.current.on("connect", () => {
+          socketRef.current.emit("joinRoom", { 
+            gameCode, 
+            username, 
+            userId, 
+            profileImageUrl: myRealProfileImg // DB에서 가져온 따끈따끈한 이미지 주소 전송
+          });
+        });
+
+        socketRef.current.on("updatePlayers", (serverPlayers) => {
+          setParticipants(prev => {
+            const justLeft = prev.filter(p => !serverPlayers.some(sp => sp.userId === p.userId));
+            if (justLeft.length > 0) {
+              setTimeout(() => { setParticipants(serverPlayers); }, 500);
+              return [...serverPlayers, ...justLeft];
+            }
+            return serverPlayers;
+          });
+        });
+
+        socketRef.current.on("system", (data) => {
+          const safeName = data.username || "알 수 없는 유저";
+          if (data.type === "JOIN") {
+            setMessages((prev) => [...prev, `📢 ${safeName}님이 입장하셨습니다.`]);
+          } else if (data.type === "LEAVE") {
+            setMessages((prev) => [...prev, `🚪 ${safeName}님이 퇴장하셨습니다.`]);
+            setLeavingPlayers(prev => [...prev, safeName]);
+            setTimeout(() => { setLeavingPlayers(prev => prev.filter(name => name !== safeName)); }, 500);
+          }
+        });
+
+        socketRef.current.on("chat", (data) => {
+          setMessages((prev) => [...prev, `${data.username}: ${data.message}`]);
+        });
+
+        socketRef.current.on("COUNTDOWN", (num) => {
+          setCountdown(num);
+          if (num === 0) navigate(`/game/${gameCode}`);
+        });
+      
+        socketRef.current.on("GAME_START", () => navigate(`/game/${gameCode}`));
+
+      } catch (err) {
+        console.error("로비 초기화 실패", err);
+        if (err.response?.status === 401) navigate("/login");
+      } finally {
+        setIsJoining(false);
       }
+    };
+
+    initLobby();
+
+    return () => {
+      socketRef.current?.disconnect();
+    };
+  }, [gameCode, userId, username, navigate, getAuthHeaders, loadFriendsData]);
+
+  // 나머지 핸들러들 (변화 없음)
+  useEffect(() => {
+    if (messagesEndRef.current) messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (chatRef.current && !chatRef.current.contains(e.target)) setIsChatOpen(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    if (!gameCode || !userId) return;
-    // 백엔드 API 컨트롤러 주소가 /api/lobby 라면 이 부분을 /api/lobby/join 으로 수정해야 할 수 있습니다.
-    axios.post("/api/game/join", null, { params: { gameCode, userId } })
-      .catch(err => console.error("입장 에러", err));
-  }, [gameCode, userId]);
-
-  useEffect(() => {
-    if (!gameCode || !username) return;
-    socketRef.current = io("http://localhost:8081");
-
-    socketRef.current.on("connect", () => {
-      socketRef.current.emit("joinRoom", { gameCode, username });
-    });
-
-    socketRef.current.on("system", (data) => {
-      const msg = data.type === "JOIN" ? `📢 ${data.username}님이 입장했습니다.` : `🚪 ${data.username}님이 퇴장했습니다.`;
-      setMessages((prev) => [...prev, msg]);
-    });
-
-    socketRef.current.on("chat", (data) => {
-      setMessages((prev) => [...prev, `${data.username}: ${data.message}`]);
-    });
-
-    socketRef.current.on("COUNTDOWN", (num) => {
-      setCountdown(num);
-      if (num === 0) {
-        navigate(`/game/${gameCode}`);
-      }
-    });
-  
-    socketRef.current.on("GAME_START", () => {
-      navigate(`/game/${gameCode}`);
-    });
-
-    return () => {
-      if(socketRef.current) socketRef.current.disconnect();
-    };
-  }, [gameCode, username, navigate]);
-
-  useEffect(() => {
-    if (!gameCode) return;
-    const fetchPlayers = async () => {
-      try {
-        const res = await axios.get("/api/game/players", { params: { gameCode } });
-        const list = Array.isArray(res.data) ? res.data : [];
-        setParticipants(list);
-        if (list.some((p) => p.userId === userId)) setIsJoining(false);
-      } catch (e) {
-        console.error("플레이어 목록 실패", e);
-      }
-    };
-    fetchPlayers();
-    const interval = setInterval(fetchPlayers, 2000);
-    return () => clearInterval(interval);
-  }, [gameCode, userId]);
-
   const handleStartGame = async () => {
     if (!isHost) return;
-    await axios.post("/api/game/start", null, { params: { gameCode, userId } });
+    try { await axios.post(`${SOCKET_SERVER}/start`, null, { params: { gameCode } }); } 
+    catch (err) { console.error("시작 실패", err); }
   };
 
   const handleSend = () => {
@@ -119,36 +181,70 @@ export default function DebateLobby() {
     setChatInput("");
   };
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isChatOpen]);
-
-  // ★ 추가된 기능: 유저 클릭 시 최신 프로필 정보 가져오기
   const handleUserClick = async (user) => {
-    setSelectedUser(user); // 일단 기본 정보로 모달 띄우기
+    setSelectedUser(user);
     setIsProfileLoading(true);
     try {
-      // 프로필 정보를 관리하는 API를 찔러서 최신 이미지와 정보를 가져옵니다.
-      const res = await axios.get(`${API_BASE}/api/profile/info?userId=${user.userId}`);
-      if (res.data) {
-        setSelectedUser((prev) => ({ ...prev, ...res.data })); // 최신 정보 덮어쓰기
-      }
-    } catch (err) {
-      console.error("최신 프로필 정보를 불러오지 못했습니다.", err);
-    } finally {
-      setIsProfileLoading(false);
+      const res = await axios.get(`${API_BASE}/api/profile/info`, { params: { userId: user.userId }, ...getAuthHeaders() });
+      if (res.data) setSelectedUser(prev => ({ ...prev, ...res.data }));
+    } catch (err) { console.error(err); } 
+    finally { setIsProfileLoading(false); }
+  };
+
+  const handleAddFriend = async (targetId) => {
+    try {
+      await axios.post(`${API_BASE}/api/profile/friends/request`, { userId, targetId }, getAuthHeaders());
+      alert("친구 요청 전송!");
+      setSelectedUser(null);
+    } catch (err) { alert("이미 친구이거나 요청 중입니다."); }
+  };
+
+  const handleOpenMessage = () => {
+    const targetUserId = selectedUser.userId;
+    const isFriend = friends.some(f => f.friendId === targetUserId || f.userId === targetUserId);
+    if (isFriend) {
+      openChat({ 
+        friendId: targetUserId, 
+        username: selectedUser.username, 
+        profileImageUrl: selectedUser.profileImageUrl 
+      });
+      setSelectedUser(null);
+    } else { alert("친구가 되어야 메시지를 보낼 수 있습니다."); }
+  };
+
+  const fetchMessages = async (targetFriendId) => {
+    try {
+      const res = await axios.get(`${API_BASE}/api/profile/messages`, { params: { user1: userId, user2: targetFriendId }, ...getAuthHeaders() });
+      setChatMessages(prev => ({ ...prev, [targetFriendId]: res.data }));
+    } catch (err) { console.error("메시지 로드 실패", err); }
+  };
+
+  const openChat = (friend) => {
+    if (!friend.friendId) return;
+    if (openChats.length >= 3 && !openChats.find(c => c.friendId === friend.friendId)) {
+      return alert("채팅창은 동시에 3개까지만 열 수 있습니다.");
+    }
+    if (!openChats.find(c => c.friendId === friend.friendId)) {
+      setOpenChats(prev => [...prev, friend]);
+      fetchMessages(friend.friendId).then(() => {
+        setTimeout(() => {
+          const el = document.getElementById(`chat-scroll-${friend.friendId}`);
+          if (el) el.scrollTop = el.scrollHeight;
+        }, 100);
+      });
     }
   };
 
-  // 친구 추가 요청 함수
-  const handleFriendRequest = async (targetId) => {
+  const closeChat = (friendId) => setOpenChats(prev => prev.filter(c => c.friendId !== friendId));
+
+  const handleSendDM = async (friendId) => {
+    const text = chatInputs[friendId];
+    if(!text || !text.trim()) return;
     try {
-      await axios.post(`${API_BASE}/api/profile/friends/request`, { userId, targetId });
-      alert("친구 요청을 보냈습니다.");
-      setSelectedUser(null);
-    } catch (err) {
-      alert(err.response?.data || "이미 친구이거나 요청 중입니다.");
-    }
+      await axios.post(`${API_BASE}/api/profile/messages/send`, { senderId: userId, receiverId: friendId, content: text.trim() }, getAuthHeaders());
+      setChatInputs(prev => ({ ...prev, [friendId]: "" }));
+      fetchMessages(friendId);
+    } catch (err) { alert("메시지 전송 실패"); }
   };
 
   if (isJoining) return <LobbyLoading />;
@@ -156,153 +252,66 @@ export default function DebateLobby() {
   return (
     <div css={s.container}>
       <div css={s.logoBg}>Agora</div>
-
       <div css={s.topBar}>
-        <button css={s.backButton} onClick={() => navigate("/main")}>
-          ← 뒤로가기
-        </button>
+        <button css={s.backButton} onClick={() => navigate("/main")}>← 뒤로가기</button>
         <div css={s.gameCode}>참여코드 : {gameCode}</div>
       </div>
-
       <div css={s.mainRow}>
-        <button
-          css={s.startButton}
-          disabled={!isHost}
-          onClick={handleStartGame}
-        >
-          {isHost ? "게임 시작" : "HOST만 시작 가능"}
+        <button css={s.startButton} disabled={!isHost} onClick={handleStartGame}>
+          {isHost ? "게임 시작" : "방장 대기 중..."}
         </button>
-
-        {countdown !== null && (
-          <div css={s.countdownOverlay}>{countdown}</div>
-        )}
-
-        <div
-          css={s.chatBox}
-          ref={chatRef}
-          onClick={(e) => {
-            e.stopPropagation();
-            setIsChatOpen(true);
-          }}
-        >
+        {countdown !== null && <div css={s.countdownOverlay}>{countdown}</div>}
+        <div css={s.chatBox} ref={chatRef} onClick={(e) => { e.stopPropagation(); setIsChatOpen(true); }}>
           <div css={s.chatMessages(isChatOpen)}>
-            {messages.map((msg, i) => (
-              <div key={i} css={s.chatMessage}>{msg}</div>
-            ))}
+            {messages.map((m, i) => <div key={i} css={s.chatMessage}>{m}</div>)}
             <div ref={messagesEndRef} />
           </div>
-
           <div css={s.chatInputWrapper}>
-            <input
-              css={s.chatInput}
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSend()}
-              placeholder="채팅을 입력하세요..."
-              onFocus={() => setIsChatOpen(true)}
+            <input 
+              css={s.chatInput} value={chatInput} onChange={(e) => setChatInput(e.target.value)} 
+              onKeyDown={(e) => e.key === "Enter" && handleSend()} onFocus={() => setIsChatOpen(true)}
+              placeholder="메시지를 입력하세요..."
             />
             <button css={s.chatSendButton} onClick={handleSend}>전송</button>
           </div>
         </div>
       </div>
-
       <div css={s.sidebar}>
         <div css={s.sidebarTitle}>참가자 ({participants.length})</div>
         <div css={s.participantList}>
-          {participants.map((p) => (
-            <div 
-              key={p.userId} 
-              css={s.participantItem}
-              onClick={() => handleUserClick(p)} // 본인 여부 상관없이 클릭 가능하게 수정
-              style={{ cursor: 'pointer' }}
-            >
-              <img 
-                src={p.profileImageUrl ? `${API_BASE}${p.profileImageUrl}` : "/default_profile.png"} 
-                style={{ width: '40px', height: '40px', borderRadius: '50%', marginRight: '10px', objectFit: 'cover' }}
-                alt="profile"
-              />
-              <div css={s.participantName}>
-                {p.username} {p.role === "HOST" && "⭐"}
+          {participants.map((p) => {
+            const isLeaving = leavingPlayers.includes(p.username);
+            return (
+              <div 
+                key={p.userId} 
+                css={[s.participantItem, isLeaving && { animation: `${slideOut} 0.5s forwards` }]} 
+                onClick={() => handleUserClick(p)} 
+                style={{ cursor: 'pointer' }}
+              >
+                <img src={getFullImageUrl(p.profileImageUrl)} style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} alt="p" />
+                <div css={s.participantName}>{p.username} {p.role === "HOST" && "👑"}</div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
-
-      {/* 디스코드 스타일 프로필 모달 */}
       {selectedUser && (
-        <div 
-          onClick={() => setSelectedUser(null)}
-          style={{
-            position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-            backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1000,
-            display: 'flex', alignItems: 'center', justifyContent: 'center'
-          }}
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: '#2b2d31', /* 디스코드 다크테마 배경색 */
-              borderRadius: '8px', 
-              width: '300px', 
-              overflow: 'hidden',
-              boxShadow: '0 8px 16px rgba(0,0,0,0.24)',
-              color: '#dbdee1'
-            }}
-          >
-            {/* 상단 배너 */}
-            <div style={{ background: '#5865F2', height: '60px', width: '100%' }}></div>
-            
-            {/* 프로필 이미지 (배너에 걸치게 설정) */}
-            <div style={{ 
-              marginTop: '-30px', marginLeft: '16px', width: '76px', height: '76px', 
-              borderRadius: '50%', background: '#2b2d31', 
-              display: 'flex', alignItems: 'center', justifyContent: 'center' 
-            }}>
-              <img 
-                src={selectedUser.profileImageUrl ? `${API_BASE}${selectedUser.profileImageUrl}` : "/default_profile.png"} 
-                style={{ width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover' }}
-                alt="profile"
-              />
+        <div css={s.profileModalOverlay} onClick={() => setSelectedUser(null)}>
+          <div css={s.profileModalCard} onClick={(e) => e.stopPropagation()}>
+            <div css={s.profileBanner} />
+            <div css={s.profileAvatarWrapper}>
+              <img src={getFullImageUrl(selectedUser.profileImageUrl)} css={s.profileAvatarImg} alt="avatar" />
             </div>
-
-            {/* 유저 정보 */}
-            <div style={{ padding: '16px' }}>
-              <h3 style={{ margin: '0 0 4px 0', color: '#fff', fontSize: '20px' }}>
-                {selectedUser.username}
-              </h3>
-              <div style={{ fontSize: '14px', color: '#b5bac1', marginBottom: '20px' }}>
-                {selectedUser.role === "HOST" ? "방장 (Host)" : "참가자 (Participant)"}
-                {isProfileLoading && " (데이터 동기화 중...)"}
-              </div>
-
-              {/* 본인이 아닐 때만 친구추가/메시지 버튼 표시 */}
+            <div css={s.profileContent}>
+              <div css={s.profileUsername}>{selectedUser.username} {isProfileLoading && "..."}</div>
+              <div css={s.profileRole}>{selectedUser.role === "HOST" ? "👑 방장 (Host)" : "👤 참가자 (Participant)"}</div>
               {selectedUser.userId !== userId ? (
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button 
-                    onClick={() => handleFriendRequest(selectedUser.userId)}
-                    style={{ 
-                      flex: 1, padding: '10px', borderRadius: '4px', border: 'none',
-                      background: '#248046', color: '#fff', cursor: 'pointer', fontWeight: 'bold'
-                    }}
-                  >
-                    친구 추가
-                  </button>
-                  <button 
-                    onClick={() => alert("메시지 기능 준비 중")}
-                    style={{ 
-                      flex: 1, padding: '10px', borderRadius: '4px', border: 'none',
-                      background: '#4e5058', color: '#fff', cursor: 'pointer', fontWeight: 'bold'
-                    }}
-                  >
-                    메시지
-                  </button>
+                <div css={s.profileBtnRow}>
+                  <button css={s.profileAddBtn} onClick={() => handleAddFriend(selectedUser.userId)}>친구 추가</button>
+                  <button css={s.profileMsgBtn} onClick={handleOpenMessage}>메시지</button>
                 </div>
               ) : (
-                <div style={{
-                  padding: '10px', textAlign: 'center', background: '#1e1f22', 
-                  borderRadius: '4px', color: '#949ba4', fontSize: '14px'
-                }}>
+                <div style={{ marginTop: '20px', padding: '10px', textAlign: 'center', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', fontSize: '13px', color: '#888' }}>
                   내 프로필입니다
                 </div>
               )}
@@ -310,6 +319,39 @@ export default function DebateLobby() {
           </div>
         </div>
       )}
+      <div style={{ position: 'fixed', bottom: '0', right: '20px', display: 'flex', gap: '15px', zIndex: 1000, alignItems: 'flex-end' }}>
+        {openChats.map((friend) => {
+          const msgs = chatMessages[friend.friendId] || [];
+          const currentInput = chatInputs[friend.friendId] || "";
+          return (
+            <div key={friend.friendId} style={{ width: '320px', height: '420px', background: '#fff', borderTopLeftRadius: '12px', borderTopRightRadius: '12px', boxShadow: '0 -2px 15px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div style={{ background: '#2c3e50', padding: '12px 15px', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <img src={getFullImageUrl(friend.profileImageUrl)} style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} alt="profile" />
+                  <strong style={{ fontSize: '15px' }}>{friend.username}</strong>
+                </div>
+                <button onClick={() => closeChat(friend.friendId)} style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '16px', cursor: 'pointer' }}>✖</button>
+              </div>
+              <div id={`chat-scroll-${friend.friendId}`} style={{ flex: 1, padding: '15px', overflowY: 'auto', background: '#f5f6fa', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {msgs.map(msg => {
+                  const isMe = Number(msg.senderId) === Number(userId);
+                  return (
+                    <div key={msg.id} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
+                      <div style={{ background: isMe ? '#3498db' : '#fff', color: isMe ? '#fff' : '#333', padding: '8px 12px', borderRadius: '15px', maxWidth: '75%', fontSize: '14px', boxShadow: '0 1px 2px rgba(0,0,0,0.1)', borderBottomRightRadius: isMe ? '4px' : '15px', borderBottomLeftRadius: isMe ? '15px' : '4px', wordBreak: 'break-word' }}>
+                        {msg.content}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ padding: '10px', background: '#fff', borderTop: '1px solid #eee', display: 'flex', gap: '6px' }}>
+                <input style={{ flex: 1, padding: '10px', borderRadius: '20px', border: '1px solid #ddd', outline: 'none', fontSize: '13px' }} value={currentInput} onChange={e => setChatInputs(prev => ({ ...prev, [friend.friendId]: e.target.value }))} onKeyDown={e => e.key === 'Enter' && handleSendDM(friend.friendId)} placeholder="메시지를 입력하세요" />
+                <button onClick={() => handleSendDM(friend.friendId)} style={{ padding: '8px 14px', background: '#2ecc71', color: '#fff', border: 'none', borderRadius: '20px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>전송</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

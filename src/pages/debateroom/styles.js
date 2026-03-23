@@ -225,3 +225,110 @@ export const countdownOverlay = css`
   z-index: 1000;
   text-shadow: 0 10px 30px rgba(0,0,0,0.3);
 `;
+
+export const profileModalOverlay = css`
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+`;
+
+export const profileModalCard = css`
+  background: #fffaf0;
+  width: 300px;
+  border-radius: 16px;
+  border: 1px solid #c8b496;
+  overflow: hidden;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+`;
+
+export const profileBanner = css`
+  background: #bfa76f;
+  height: 60px;
+  width: 100%;
+`;
+
+export const profileAvatarWrapper = css`
+  margin-top: -35px;
+  margin-left: 20px;
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background: #fffaf0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid #fffaf0;
+`;
+
+export const profileAvatarImg = css`
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  object-fit: cover;
+`;
+
+export const profileContent = css`
+  padding: 12px 20px 20px 20px;
+`;
+
+export const profileUsername = css`
+  font-size: 20px;
+  font-weight: bold;
+  color: #5a534f;
+  margin-bottom: 4px;
+`;
+
+export const profileRole = css`
+  font-size: 13px;
+  color: #8a7f70;
+  margin-bottom: 20px;
+`;
+
+export const profileBtnRow = css`
+  display: flex;
+  gap: 8px;
+`;
+
+export const profileAddBtn = css`
+  flex: 1;
+  background: #bfa76f;
+  color: white;
+  border: none;
+  padding: 10px;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 14px;
+  &:hover { background: #a9905e; }
+`;
+
+export const profileMsgBtn = css`
+  flex: 1;
+  background: #d0c5b2;
+  color: #4a433e;
+  border: none;
+  padding: 10px;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 14px;
+  &:hover { background: #c4b8a3; }
+`;
+
+export const profileMySelfTag = css`
+  width: 100%; 
+  transform: translateX(-10px);
+  padding: 10px;
+  background: #f0ece3;
+  color: #8a7f70;
+  text-align: center;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: bold;
+`;

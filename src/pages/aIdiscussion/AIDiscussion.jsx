@@ -30,19 +30,38 @@ export default function AIDiscussion() {
     }
   }, [chatMessages, loading]);
 
+  // ✨ 공통 헤더 생성 함수 (401 에러 방지)
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem("token");
+    return {
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      }
+    };
+  };
+
   // 1. 토론 시작
   const handleStartDiscussion = async () => {
     if (!topicInput.trim()) return alert("주제를 입력해주세요.");
     setLoading(true);
     try {
-      const res = await axios.post(`http://localhost:8080/api/ai/validate-topic`, { topic: topicInput });
+      const res = await axios.post(
+        `http://localhost:8080/api/ai/validate-topic`, 
+        { topic: topicInput },
+        getAuthHeaders()
+      );
       if (!res.data.isValid) return alert("부적절하거나 토론이 불가능한 주제입니다.");
       
       setTopic(topicInput);
       setPhase("DISCUSSING");
       setChatMessages([{ sender: "ai", content: `안녕하세요! [${topicInput}] 주제로 토론을 시작하죠. 먼저 본인의 [주장]을 들려주세요.` }]);
     } catch (err) {
-      alert("서버 연결 실패");
+      console.error(err);
+      alert("서버 연결 또는 인증 실패");
+      if (err.response?.status === 401) {
+        navigate("/login");
+      }
     } finally {
       setLoading(false);
     }
@@ -64,7 +83,7 @@ export default function AIDiscussion() {
         difficulty: "쉬움",
         history: newHistory.map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.content })),
         stage: DEBATE_STAGES[stageIdx].id
-      });
+      }, getAuthHeaders());
 
       setChatMessages(prev => [...prev, { sender: "ai", content: res.data.content }]);
       if (stageIdx < DEBATE_STAGES.length - 1) setStageIdx(prev => prev + 1);
@@ -83,7 +102,7 @@ export default function AIDiscussion() {
       const res = await axios.post(`http://localhost:8080/api/ai/judge`, {
         topicTitle: topic,
         history: chatMessages.map(m => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.content }))
-      });
+      }, getAuthHeaders());
       setJudgeResult(res.data.content);
     } catch (err) {
       setJudgeResult("판정 오류 발생");
@@ -92,13 +111,13 @@ export default function AIDiscussion() {
     }
   };
 
-  // 4. 메인으로 돌아가기 (삭제 로직 포함)
+  // 4. 메인으로 돌아가기
   const handleGoMain = async () => {
     setLoading(true);
     try {
-      // 백엔드에 토론 종료 및 삭제 요청
       await axios.delete(`http://localhost:8080/api/ai/delete-topic`, {
-        params: { title: topic }
+        params: { title: topic },
+        ...getAuthHeaders()
       });
     } catch (err) {
       console.error("주제 삭제 실패:", err);
@@ -108,20 +127,22 @@ export default function AIDiscussion() {
       setChatMessages([]);
       setStageIdx(0);
       setLoading(false);
-      navigate("/main"); // 메인 화면 경로로 이동
+      navigate("/main"); 
     }
   };
 
   return (
     <div css={s.container}>
+      {/* 1단계: 주제 선택 */}
       {phase === "TOPIC_SELECT" ? (
         <div css={s.centerBox}>
           <h2>AI 논리 대결 1:1</h2>
           <p style={{color: '#888', marginBottom: '20px'}}>부적절한 주제는 AI 판사에 의해 거절될 수 있습니다.</p>
-          <input css={s.modalInput} value={topicInput} onChange={(e) => setTopicInput(e.target.value)} placeholder="예: 아이언맨 vs 배트맨" />
+          <input css={s.modalInput} value={topicInput} onChange={(e) => setTopicInput(e.target.value)} placeholder="예: 짜장면 vs 짬뽕" />
           <button css={s.modalSendBtn} onClick={handleStartDiscussion} disabled={loading}>{loading ? "검증 중..." : "토론 시작"}</button>
         </div>
       ) : phase === "DISCUSSING" ? (
+        /* 2단계: 토론 진행 */
         <>
           <div css={s.topBar}>
             <div css={s.phaseLabel}>단계: {DEBATE_STAGES[stageIdx].label} ({stageIdx + 1}/4)</div>
@@ -135,8 +156,6 @@ export default function AIDiscussion() {
               <h3 css={s.teamTitle(false)}>AI DEBATER</h3>
               <div css={s.historyBox} ref={scrollRef}>
                 {chatMessages.filter(m => m.sender === 'ai').map((msg, i) => <div key={i} css={s.bubble}>{msg.content}</div>)}
-                
-                {/* AI 타이핑 애니메이션 적용 */}
                 {loading && (
                   <div css={s.typingContainer}>
                     <div css={s.dot("0s")} />
@@ -159,15 +178,28 @@ export default function AIDiscussion() {
           </div>
         </>
       ) : (
+        /* 3단계: 결과 확인 (로딩 포함) */
         <div css={s.resultBox}>
-          <h2>🏆 AI 토론 판정서</h2>
-          <div style={{ whiteSpace: 'pre-wrap', textAlign: 'left', background: '#fdfdfd', padding: 30, borderRadius: 20, lineHeight: '1.8', border: '1px solid #eee', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' }}>
-            {loading ? "전체 토론 내용을 정밀 심사 중입니다..." : judgeResult}
-          </div>
-          <div style={{ display: 'flex', gap: '10px', marginTop: '30px' }}>
-            <button css={s.modalSendBtn} onClick={() => window.location.reload()}>다시 하기</button>
-            <button css={s.modalSendBtn} style={{ background: '#2c3e50' }} onClick={handleGoMain}>확인 및 메인으로</button>
-          </div>
+          {loading ? (
+            /* 판결 대기 애니메이션 */
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '50px 0' }}>
+              <img src="/예제.gif" alt="판결 중" width="220" style={{ marginBottom: "25px", display: "block" }} />
+              <h2 style={{ fontSize: '1.6rem', color: '#2c3e50', marginBottom: '12px' }}>배심원(AI)이 판결을 내리고 있습니다...</h2>
+              <p style={{ color: '#888', fontSize: '1.1rem' }}>과연 나의 논리가 AI를 압도했을까요? 잠시만 기다려주세요.</p>
+            </div>
+          ) : (
+            /* 실제 판정 결과 */
+            <>
+              <h2>🏆 AI 토론 판정서</h2>
+              <div style={{ whiteSpace: 'pre-wrap', textAlign: 'left', background: '#fdfdfd', padding: 30, borderRadius: 20, lineHeight: '1.8', border: '1px solid #eee', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', marginTop: '20px' }}>
+                {judgeResult}
+              </div>
+              <div style={{ display: 'flex', gap: '15px', marginTop: '35px', justifyContent: 'center' }}>
+                <button css={s.modalSendBtn} onClick={() => window.location.reload()}>다시 하기</button>
+                <button css={s.modalSendBtn} style={{ background: '#2c3e50' }} onClick={handleGoMain}>확인 및 메인으로</button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

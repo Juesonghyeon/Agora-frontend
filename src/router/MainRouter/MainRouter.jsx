@@ -9,15 +9,11 @@ import Login from "../../pages/login/login.jsx";
 import InGame from "../../pages/ingame/InGame.jsx";
 import AIDiscussion from "../../pages/aIdiscussion/AIDiscussion.jsx";
 
-/**
- * Sidebar + 페이지를 감싸는 Wrapper 컴포넌트
- */
 function WithSidebar({ children }) {
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
 
   const handleLogout = () => {
     console.log("로그아웃 처리");
-    // 실제 로그아웃 로직 넣기
   };
 
   return (
@@ -36,40 +32,39 @@ function WithSidebar({ children }) {
 
 export default function MainRouter() {
   return (
-    <Routes>
-      {/* Home / Login 페이지는 Sidebar 없음 */}
-      <Route path="/" element={<Home />} />
-      <Route path="/login" element={<Login />} />
+    <>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/login" element={<Login />} />
 
-      {/* Sidebar 적용 페이지 */}
-      <Route
-        path="/main"
-        element={
-          <WithSidebar>
-            <Main />
-          </WithSidebar>
-        }
-      />
-      <Route
-        path="/profile"
-        element={
-          <WithSidebar>
-            <Profile />
-          </WithSidebar>
-        }
-      />
+        <Route
+          path="/main"
+          element={
+            <WithSidebar>
+              <Main />
+            </WithSidebar>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <WithSidebar>
+              <Profile />
+            </WithSidebar>
+          }
+        />
 
-      <Route
-        path="/topic/:gameCode"
-        element={<DebateArena />}
-      />
+        <Route
+          path="/topic/:gameCode"
+          element={<DebateArena />}
+        />
 
-      <Route
-        path="/game/:gameCode"
-        element={<InGame/>}
-      />
-      <Route path="/aidiscussion" element={<AIDiscussion />} />
-    </Routes>
-    
+        <Route
+          path="/game/:gameCode"
+          element={<InGame/>}
+        />
+        <Route path="/aidiscussion" element={<AIDiscussion />} />
+      </Routes>
+    </>
   );
 }
